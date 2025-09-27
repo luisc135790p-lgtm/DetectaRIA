@@ -27,13 +27,24 @@ cloudinary.config(
 new_labels_count = 0
 labels_threshold = 10
 
-# Cargar modelo YOLOv5
+# Cargar modelo YOLOv5 con manejo de errores
+model = None
 try:
+    # Intentar cargar el modelo con manejo de rate limit
     model = torch.hub.load('ultralytics/yolov5', 'yolov5s', pretrained=True, trust_repo=True)
     model.eval()
     print("Modelo YOLOv5s (potente) cargado correctamente.")
 except Exception as e:
-    print("Error al cargar el modelo:", e)
+    print(f"Error al cargar el modelo: {e}")
+    print("Intentando con modelo más ligero...")
+    try:
+        # Intentar con modelo más ligero
+        model = torch.hub.load('ultralytics/yolov5', 'yolov5n', pretrained=True, trust_repo=True)
+        model.eval()
+        print("Modelo YOLOv5n (ligero) cargado correctamente.")
+    except Exception as e2:
+        print(f"Error al cargar modelo ligero: {e2}")
+        print("El modelo no está disponible. La detección no funcionará.")
 
 # Densidades de materiales (g/cm³)
 material_densities = {
@@ -94,13 +105,16 @@ def retrain_model():
 
 @app.route('/detect', methods=['POST'])
 def detect():
-    if 'image' not in request.files:
-        return jsonify({'error': 'No image provided'}), 400
-
-    file = request.files['image']
-    image_data = file.read()
-
     try:
+        if model is None:
+            return jsonify({'error': 'Modelo no disponible. Contacta al administrador.'}), 500
+            
+        if 'image' not in request.files:
+            return jsonify({'error': 'No image provided'}), 400
+
+        file = request.files['image']
+        image_data = file.read()
+
         img = Image.open(BytesIO(image_data))
         
         results = model(img)
@@ -132,20 +146,21 @@ def detect():
 
         return jsonify(detected_waste)
     except Exception as e:
+        print(f"Error en /detect: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/collect', methods=['POST'])
 def collect():
-    if 'image' not in request.files:
-        return jsonify({'error': 'No image provided'}), 400
-
-    file = request.files['image']
-    object_name = request.form.get('object_name')
-
-    if not object_name:
-        return jsonify({'error': 'No object name provided'}), 400
-
     try:
+        if 'image' not in request.files:
+            return jsonify({'error': 'No image provided'}), 400
+
+        file = request.files['image']
+        object_name = request.form.get('object_name')
+
+        if not object_name:
+            return jsonify({'error': 'No object name provided'}), 400
+
         img = Image.open(BytesIO(file.read()))
         cloudinary_url = save_image_with_label(img, object_name)
 
@@ -154,6 +169,7 @@ def collect():
         else:
             return jsonify({'error': 'Failed to upload image'}), 500
     except Exception as e:
+        print(f"Error en /collect: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/')
