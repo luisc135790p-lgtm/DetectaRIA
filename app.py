@@ -4,9 +4,7 @@ import cloudinary.uploader
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import torch
-from torchvision.models.detection import ssdlite320_mobilenet_v3_large
-from torchvision.models.detection.ssdlite import SSDLite320MobilenetV3LargeWeights
-from torchvision import transforms
+from torchvision.models.detection import ssdlite320_mobilenet_v3_large, SSDLite320_MobileNet_V3_Large_Weights
 from PIL import Image
 import time
 from datetime import datetime
@@ -30,15 +28,16 @@ cloudinary.config(
 new_labels_count = 0
 labels_threshold = 10
 
-# Cargar modelo MobileNet SSD desde torchvision (no necesita Torch Hub)
+# Cargar modelo MobileNet SSD desde torchvision
 model = None
 
 def load_model():
     global model
     try:
         print("Cargando modelo SSDLite320MobileNetV3Large desde torchvision...")
-        weights = SSDLite320MobilenetV3LargeWeights.DEFAULT
-        model = ssdlite320_mobilenet_v3_large(weights=weights, progress=True)
+        # Cargar pesos pre-entrenados
+        weights = SSDLite320_MobileNet_V3_Large_Weights.DEFAULT
+        model = ssdlite320_mobilenet_v3_large(weights=weights)
         model.eval()
         print("Modelo SSDLite320MobileNetV3Large cargado correctamente.")
     except Exception as e:
@@ -208,22 +207,23 @@ def detect():
 
         # Preparar imagen para detección
         img = Image.open(BytesIO(image_data)).convert("RGB")
-        transform = transforms.Compose([
-            transforms.ToTensor(),
-        ])
-        img_tensor = transform(img).unsqueeze(0)  # Añadir batch dimension
+        
+        # Preprocesar imagen
+        weights = SSDLite320_MobileNet_V3_Large_Weights.DEFAULT
+        preprocess = weights.transforms()
+        batch = preprocess(img).unsqueeze(0)  # Añadir batch dimension
 
         # Hacer predicción
         with torch.no_grad():
-            predictions = model(img_tensor)
+            prediction = model(batch)[0]
 
         # Procesar resultados
         detected_waste = []
-        for i in range(len(predictions[0]['boxes'])):
-            score = predictions[0]['scores'][i].item()
+        for i in range(len(prediction['boxes'])):
+            score = prediction['scores'][i].item()
             if score > 0.5:  # Umbral de confianza
-                box = predictions[0]['boxes'][i].tolist()
-                label_idx = predictions[0]['labels'][i].item()
+                box = prediction['boxes'][i].tolist()
+                label_idx = prediction['labels'][i].item()
                 
                 # Mapear índice de etiqueta a nombre de clase
                 # Usar un diccionario de COCO
