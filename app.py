@@ -27,38 +27,44 @@ cloudinary.config(
 new_labels_count = 0
 labels_threshold = 10
 
-# Cargar modelo YOLOv5 con manejo de errores y fallback
+# Cargar modelo YOLOv5 con manejo de errores y rate limit
 model = None
 
-def load_model():
+def load_model_with_retry():
     global model
     print("Intentando cargar modelo...")
     
-    # Intentar con modelo ligero primero
-    try:
-        print("Intentando cargar yolov5n...")
-        model = torch.hub.load('ultralytics/yolov5', 'yolov5n', pretrained=True, trust_repo=True)
-        model.eval()
-        print("Modelo YOLOv5n (ligero) cargado correctamente.")
-        return True
-    except Exception as e:
-        print(f"Error al cargar yolov5n: {e}")
+    # Intentar con modelo ligero primero (más probable que funcione)
+    models_to_try = [
+        ('yolov5n', 'modelo muy ligero'),
+        ('yolov5s', 'modelo pequeño'),
+        ('yolov5m', 'modelo mediano')
+    ]
     
-    # Si no funciona, intentar con s (pequeño)
-    try:
-        print("Intentando cargar yolov5s...")
-        model = torch.hub.load('ultralytics/yolov5', 'yolov5s', pretrained=True, trust_repo=True)
-        model.eval()
-        print("Modelo YOLOv5s (pequeño) cargado correctamente.")
-        return True
-    except Exception as e:
-        print(f"Error al cargar yolov5s: {e}")
+    for model_name, description in models_to_try:
+        try:
+            print(f"Intentando cargar {model_name} ({description})...")
+            # Añadir parámetros para evitar rate limit
+            model = torch.hub.load(
+                'ultralytics/yolov5', 
+                model_name, 
+                pretrained=True, 
+                trust_repo=True,
+                force_reload=False  # Evitar recargas innecesarias
+            )
+            model.eval()
+            print(f"Modelo {model_name} ({description}) cargado correctamente.")
+            return True
+        except Exception as e:
+            print(f"Error al cargar {model_name}: {e}")
+            # Esperar un poco antes de intentar el siguiente
+            time.sleep(2)
     
     print("No se pudo cargar ningún modelo. La detección no funcionará.")
     return False
 
-# Intentar cargar modelo al iniciar
-load_model()
+# Intentar cargar modelo al iniciar (con manejo de rate limit)
+load_model_with_retry()
 
 # Densidades de materiales (g/cm³)
 material_densities = {
@@ -121,7 +127,10 @@ def retrain_model():
 def detect():
     try:
         if model is None:
-            return jsonify({'error': 'Modelo no disponible. Contacta al administrador.'}), 500
+            return jsonify({
+                'error': 'Modelo no disponible. Contacta al administrador.',
+                'message': 'El modelo de detección no se pudo cargar en el servidor.'
+            }), 500
             
         if 'image' not in request.files:
             return jsonify({'error': 'No image provided'}), 400
