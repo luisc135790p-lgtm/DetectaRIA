@@ -27,24 +27,38 @@ cloudinary.config(
 new_labels_count = 0
 labels_threshold = 10
 
-# Cargar modelo YOLOv5 con manejo de errores
+# Cargar modelo YOLOv5 con manejo de errores y fallback
 model = None
-try:
-    # Intentar cargar el modelo con manejo de rate limit
-    model = torch.hub.load('ultralytics/yolov5', 'yolov5s', pretrained=True, trust_repo=True)
-    model.eval()
-    print("Modelo YOLOv5s (potente) cargado correctamente.")
-except Exception as e:
-    print(f"Error al cargar el modelo: {e}")
-    print("Intentando con modelo más ligero...")
+
+def load_model():
+    global model
+    print("Intentando cargar modelo...")
+    
+    # Intentar con modelo ligero primero
     try:
-        # Intentar con modelo más ligero
+        print("Intentando cargar yolov5n...")
         model = torch.hub.load('ultralytics/yolov5', 'yolov5n', pretrained=True, trust_repo=True)
         model.eval()
         print("Modelo YOLOv5n (ligero) cargado correctamente.")
-    except Exception as e2:
-        print(f"Error al cargar modelo ligero: {e2}")
-        print("El modelo no está disponible. La detección no funcionará.")
+        return True
+    except Exception as e:
+        print(f"Error al cargar yolov5n: {e}")
+    
+    # Si no funciona, intentar con s (pequeño)
+    try:
+        print("Intentando cargar yolov5s...")
+        model = torch.hub.load('ultralytics/yolov5', 'yolov5s', pretrained=True, trust_repo=True)
+        model.eval()
+        print("Modelo YOLOv5s (pequeño) cargado correctamente.")
+        return True
+    except Exception as e:
+        print(f"Error al cargar yolov5s: {e}")
+    
+    print("No se pudo cargar ningún modelo. La detección no funcionará.")
+    return False
+
+# Intentar cargar modelo al iniciar
+load_model()
 
 # Densidades de materiales (g/cm³)
 material_densities = {
